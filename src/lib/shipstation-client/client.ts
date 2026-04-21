@@ -4,8 +4,11 @@ import {
     ShipStationClientOptions,
     ShipStationCreateShipment,
     ShipStationCreateShipmentsResponse,
+    ShipStationLabel,
+    ShipStationListCarriersResponse,
     ShipStationListShipmentsResponse,
     ShipStationListWebhooksResponse,
+    ShipStationRateResponse,
     ShipStationShipment,
     ShipStationSubscribeWebhookInput,
     ShipStationWebhookSubscription,
@@ -132,6 +135,67 @@ export class ShipStationClient {
             "PUT",
             {}
         )
+    }
+
+    /**
+     * Returns shipping rates for a persisted v2 shipment. The caller passes
+     * an optional list of carrier_ids to filter — otherwise ShipStation
+     * returns rates from every connected carrier that supports the lane.
+     *
+     * Note: /v2/shipments/{id}/rates is blocked on Basic plans (405), so we
+     * always use the top-level /v2/rates endpoint with shipment_id in the
+     * body — works across plans.
+     */
+    async getRatesForShipment(
+        shipmentId: string,
+        options?: { carrier_ids?: string[] }
+    ): Promise<ShipStationRateResponse> {
+        return this.request<ShipStationRateResponse>("/rates", "POST", {
+            shipment_id: shipmentId,
+            rate_options: {
+                carrier_ids: options?.carrier_ids ?? [],
+            },
+        })
+    }
+
+    /**
+     * Purchases a label from a rate_id returned by getRatesForShipment.
+     * Label metadata includes tracking_number, carrier_code, service_code,
+     * and label_download URLs.
+     */
+    async buyLabelFromRate(
+        rateId: string,
+        options?: {
+            label_format?: "pdf" | "png" | "zpl"
+            label_layout?: "4x6" | "letter"
+            label_download_type?: "url" | "inline"
+        }
+    ): Promise<ShipStationLabel> {
+        return this.request<ShipStationLabel>(
+            `/labels/rates/${rateId}`,
+            "POST",
+            {
+                label_format: options?.label_format ?? "pdf",
+                label_layout: options?.label_layout ?? "4x6",
+                label_download_type: options?.label_download_type ?? "url",
+            }
+        )
+    }
+
+    async getLabel(labelId: string): Promise<ShipStationLabel> {
+        return this.request<ShipStationLabel>(`/labels/${labelId}`, "GET")
+    }
+
+    async voidLabel(labelId: string): Promise<{ approved: boolean; message?: string }> {
+        return this.request<{ approved: boolean; message?: string }>(
+            `/labels/${labelId}/void`,
+            "PUT",
+            {}
+        )
+    }
+
+    async listCarriers(): Promise<ShipStationListCarriersResponse> {
+        return this.request<ShipStationListCarriersResponse>("/carriers", "GET")
     }
 
     async listWebhooks(): Promise<ShipStationListWebhooksResponse> {
