@@ -226,10 +226,58 @@ export class ShipStationClient {
     }
 
     /**
+     * Normalises ShipStation v2 carrier_code variants down to a canonical
+     * carrier name. ShipStation Carrier Services accounts add suffixes like
+     * `_walleted`, `_cnd_walleted`, `wallet`, etc. — strip them so the
+     * tracking-URL/humanCarrier maps don't have to enumerate every variant.
+     *
+     * Examples:
+     *   rm_cnd_walleted   → royal_mail
+     *   pf_cnd_walleted   → parcelforce
+     *   dpdwallet         → dpd
+     *   yodel_walleted    → yodel
+     *   fedex_uk_walleted → fedex_uk
+     *   hermes            → evri
+     */
+    static normalizeCarrierCode(carrierCode: string | null | undefined): string {
+        const raw = (carrierCode || "").toLowerCase().trim()
+        if (!raw) return ""
+        // Strip the SCS account suffixes — order matters (longest first).
+        let cc = raw
+            .replace(/_cnd_walleted$/, "")
+            .replace(/_walleted$/, "")
+            .replace(/wallet$/, "")
+        // Map ShipStation's short codes to canonical names.
+        const aliases: Record<string, string> = {
+            rm: "royal_mail",
+            pf: "parcelforce",
+            dpd: "dpd",
+            yodel: "yodel",
+            hermes: "evri",
+            myhermes: "evri",
+            fedex_uk: "fedex_uk",
+            ups: "ups",
+            fedex: "fedex",
+            stamps_com: "usps",
+            endicia: "usps",
+            usps: "usps",
+            dhl_express: "dhl_express",
+            dhl_express_worldwide: "dhl_express",
+            dhl_express_mydhl: "dhl_express",
+            dhl_ecommerce: "dhl_ecommerce",
+            globegistics: "dhl_ecommerce",
+            globalpost: "globalpost",
+            canada_post: "canada_post",
+            ontrac: "ontrac",
+        }
+        return aliases[cc] ?? cc
+    }
+
+    /**
      * Builds a public tracking URL from a carrier code and tracking number.
-     * v2 uses carrier_id (opaque string like `se-12345`) so we try to infer
-     * by carrier_code string when ShipStation provides it in webhook
-     * payloads. Returns "" for unknown carriers.
+     * Accepts any ShipStation v2 carrier_code variant (raw or normalised).
+     * Returns "" for unknown carriers — the email template degrades to
+     * "see details in store".
      */
     static trackingUrlFor(
         carrierCode: string | null | undefined,
@@ -237,38 +285,33 @@ export class ShipStationClient {
     ): string {
         if (!trackingNumber) return ""
         const tn = trackingNumber.replace(/\s+/g, "")
-        const cc = (carrierCode || "").toLowerCase().trim()
+        const cc = ShipStationClient.normalizeCarrierCode(carrierCode)
 
         switch (cc) {
             case "ups":
-            case "ups_walleted":
                 return `https://www.ups.com/track?tracknum=${tn}`
             case "fedex":
-            case "fedex_walleted":
                 return `https://www.fedex.com/fedextrack/?trknbr=${tn}`
-            case "stamps_com":
+            case "fedex_uk":
+                return `https://www.fedex.com/fedextrack/?trknbr=${tn}`
             case "usps":
-            case "endicia":
                 return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${tn}`
             case "dhl_express":
-            case "dhl_express_worldwide":
                 return `https://www.dhl.com/en/express/tracking.html?AWB=${tn}`
             case "dhl_ecommerce":
-            case "globegistics":
                 return `https://webtrack.dhlglobalmail.com/?trackingnumber=${tn}`
             case "royal_mail":
-            case "royal_mail_uk":
-            case "royalmail":
                 return `https://www.royalmail.com/track-your-item#/tracking-results/${tn}`
+            case "parcelforce":
+                return `https://www.parcelforce.com/track-trace?trackNumber=${tn}`
             case "evri":
-            case "hermes":
-            case "myhermes":
                 return `https://www.evri.com/track/parcel/${tn.replace(/:/g, "")}/details`
             case "dpd":
-            case "dpd_uk":
                 return `https://track.dpd.co.uk/parcels/${tn}`
             case "yodel":
                 return `https://www.yodel.co.uk/tracking/${tn}`
+            case "globalpost":
+                return `https://parceltracking.gpsworld.com/?TrackingId=${tn}`
             case "canada_post":
                 return `https://www.canadapost-postescanada.ca/track-reperage/en#/search?searchFor=${tn}`
             case "ontrac":
@@ -280,43 +323,39 @@ export class ShipStationClient {
 
     /** Humanises a ShipStation carrier code for display in emails / UI. */
     static humanCarrier(carrierCode: string | null | undefined): string {
-        const cc = (carrierCode || "").toLowerCase().trim()
+        const raw = (carrierCode || "").toLowerCase().trim()
+        if (!raw) return "your carrier"
+        const cc = ShipStationClient.normalizeCarrierCode(raw)
         switch (cc) {
             case "ups":
-            case "ups_walleted":
                 return "UPS"
             case "fedex":
-            case "fedex_walleted":
                 return "FedEx"
-            case "stamps_com":
+            case "fedex_uk":
+                return "FedEx UK"
             case "usps":
-            case "endicia":
                 return "USPS"
             case "dhl_express":
-            case "dhl_express_worldwide":
                 return "DHL Express"
             case "dhl_ecommerce":
-            case "globegistics":
                 return "DHL eCommerce"
             case "royal_mail":
-            case "royal_mail_uk":
-            case "royalmail":
                 return "Royal Mail"
+            case "parcelforce":
+                return "Parcelforce"
             case "evri":
-            case "hermes":
-            case "myhermes":
                 return "Evri"
             case "dpd":
-            case "dpd_uk":
                 return "DPD"
             case "yodel":
                 return "Yodel"
+            case "globalpost":
+                return "GlobalPost"
             case "canada_post":
                 return "Canada Post"
             case "ontrac":
                 return "OnTrac"
             default:
-                if (!cc) return "your carrier"
                 return cc
                     .split(/[_\s]+/)
                     .map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : ""))
