@@ -1,6 +1,7 @@
 import {
     AbstractFulfillmentProviderService,
     ContainerRegistrationKeys,
+    MedusaError,
 } from "@medusajs/framework/utils"
 import {
     Logger,
@@ -417,7 +418,15 @@ export class ShipStationProviderService extends AbstractFulfillmentProviderServi
             this.logger_.error(
                 `[ShipStation] Failed to create fulfillment ${fulfillment.id}: ${e?.message ?? e}`
             )
-            throw e
+            // Surface the real reason to the admin. Medusa's default error
+            // handler hides plain Error messages as "An unknown error occurred";
+            // a MedusaError passes the message through (here as a 400) so the
+            // admin sees the actual cause (weight/validation/API/config).
+            if (e instanceof MedusaError) throw e
+            throw new MedusaError(
+                MedusaError.Types.INVALID_DATA,
+                e instanceof Error ? e.message : String(e)
+            )
         }
     }
 
