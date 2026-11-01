@@ -12,12 +12,18 @@ const displayModule = {
   displays: {}
 };
 const i18nModule = { resources: i18nTranslations0 };
+const cellRendererModule = {};
+const layoutModule = { layouts: [] };
+const searchEntityModule = {};
 const plugin = {
   widgetModule,
   routeModule,
   menuItemModule,
   formModule,
   displayModule,
-  i18nModule
+  i18nModule,
+  cellRendererModule,
+  layoutModule,
+  searchEntityModule
 };
 module.exports = plugin;
